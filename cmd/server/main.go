@@ -21,10 +21,11 @@ func main() {
 	defer cancel()
 
 	q := queue.New(100)
+	dlq := queue.NewDeadLetterQueue()
 
 	handler := func(ctx context.Context, t *task.Task) error {
 		log.Printf("Executing task %s (%s)", t.ID, t.Name)
-		if rand.Intn(3) == 0 {
+		if rand.Intn(2) == 0 { // fail simulation
 			return fmt.Errorf("Task %s: simulated error", t.ID)
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -35,7 +36,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	for i := range numWorkers {
-		w := worker.New(i, handler, q)
+		w := worker.New(i, handler, q, dlq)
 		wg.Add(1)
 		wg.Go(func() {
 			defer wg.Done()
@@ -57,6 +58,9 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("Shutting down, waiting for workers to finish...")
+	for _, w := range dlq.List() {
+		log.Printf("Dead letter: task: %s failed permanently: %s", w.Task.ID, w.Reason)
+	}
 	wg.Wait()
 	log.Println("Done")
 }
