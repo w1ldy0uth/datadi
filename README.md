@@ -26,4 +26,4 @@ github.com/w1ldy0uth/datadi
 
 ## Status
 
-This is an actively developing project. See ROADMAP.md for what's done, what's in progress, and what's next.
+This is an actively developing project. See [ROADMAP.md](./ROADMAP.md) for what's done, what's in progress, and what's next.
