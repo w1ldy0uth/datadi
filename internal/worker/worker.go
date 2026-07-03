@@ -9,7 +9,9 @@ import (
 	"github.com/w1ldy0uth/datadi/internal/task"
 )
 
-type HandlerFunc func(ctx context.Context, t *task.Task) error
+type Dispatcher interface {
+	Dispatch(ctx context.Context, name string, payload []byte) error
+}
 
 type Requeuer interface {
 	Enqueue(t *task.Task)
@@ -21,13 +23,13 @@ type DeadLetterer interface {
 
 type Worker struct {
 	id         int
-	handler    HandlerFunc
+	dispatcher Dispatcher
 	requirer   Requeuer
 	deadLetter DeadLetterer
 }
 
-func New(id int, handler HandlerFunc, requirer Requeuer, deadLetter DeadLetterer) *Worker {
-	return &Worker{id: id, handler: handler, requirer: requirer, deadLetter: deadLetter}
+func New(id int, dispatcher Dispatcher, requirer Requeuer, deadLetter DeadLetterer) *Worker {
+	return &Worker{id: id, dispatcher: dispatcher, requirer: requirer, deadLetter: deadLetter}
 }
 
 func (w *Worker) Start(ctx context.Context, tasks <-chan *task.Task) {
@@ -55,7 +57,7 @@ func (w *Worker) process(ctx context.Context, t *task.Task) {
 	log.Printf("Worker %d processing task: %s", w.id, t.ID)
 	t.Status = task.StatusRunning
 
-	if err := w.handler(ctx, t); err != nil {
+	if err := w.dispatcher.Dispatch(ctx, t.Name, t.Payload); err != nil {
 		log.Printf("Task %s failed: %v", t.ID, err)
 		w.handleFailure(ctx, t, err)
 		return

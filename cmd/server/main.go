@@ -12,9 +12,12 @@ import (
 	"time"
 
 	"github.com/w1ldy0uth/datadi/internal/queue"
+	"github.com/w1ldy0uth/datadi/internal/registry"
 	"github.com/w1ldy0uth/datadi/internal/task"
 	"github.com/w1ldy0uth/datadi/internal/worker"
 )
+
+const demoTaskName = "demo-task"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -23,20 +26,24 @@ func main() {
 	q := queue.New(100)
 	dlq := queue.NewDeadLetterQueue()
 
-	handler := func(ctx context.Context, t *task.Task) error {
-		log.Printf("Executing task %s (%s)", t.ID, t.Name)
+	reg := registry.New()
+	err := reg.Register(demoTaskName, func(ctx context.Context, payload []byte) error {
+		log.Printf("Executing task %s", demoTaskName)
 		if rand.Intn(2) == 0 { // fail simulation
-			return fmt.Errorf("Task %s: simulated error", t.ID)
+			return fmt.Errorf("%s: simulated error", demoTaskName)
 		}
 		time.Sleep(500 * time.Millisecond)
 		return nil
+	})
+	if err != nil {
+		log.Fatalf("Registering handler: %v", err)
 	}
 
 	const numWorkers = 3
 	var wg sync.WaitGroup
 
 	for i := range numWorkers {
-		w := worker.New(i, handler, q, dlq)
+		w := worker.New(i, reg, q, dlq)
 		wg.Add(1)
 		wg.Go(func() {
 			defer wg.Done()
@@ -48,7 +55,7 @@ func main() {
 		for i := range 10 {
 			q.Enqueue(&task.Task{
 				ID:         fmt.Sprintf("task-%d", i),
-				Name:       fmt.Sprintf("Task %d", i),
+				Name:       demoTaskName,
 				Status:     task.StatusPending,
 				CreatedAt:  time.Now(),
 				MaxRetries: 3,
