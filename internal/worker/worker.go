@@ -58,7 +58,21 @@ func (w *Worker) process(ctx context.Context, t *task.Task) {
 	t.Status = task.StatusRunning
 
 	if err := w.dispatcher.Dispatch(ctx, t.Name, t.Payload); err != nil {
+		if ctx.Err() != nil {
+			log.Printf("Worker %d: task %s canceled during dispatch, not counting as a failed attempt", w.id, t.ID)
+			t.Status = task.StatusPending
+			return
+		}
+
 		log.Printf("Task %s failed: %v", t.ID, err)
+
+		if task.IsPermanent(err) {
+			t.Status = task.StatusFailed
+			log.Printf("Worker %d: task %s failed permanently, giving up", w.id, t.ID)
+			w.deadLetter.Add(t, err)
+			return
+		}
+
 		w.handleFailure(ctx, t, err)
 		return
 	}

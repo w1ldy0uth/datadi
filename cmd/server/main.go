@@ -29,11 +29,15 @@ func main() {
 	reg := registry.New()
 	err := reg.Register(demoTaskName, func(ctx context.Context, payload []byte) error {
 		log.Printf("Executing task %s", demoTaskName)
-		if rand.Intn(2) == 0 { // fail simulation
-			return fmt.Errorf("%s: simulated error", demoTaskName)
+		switch rand.Intn(3) {
+		case 0: // transient failure, retried with backoff
+			return fmt.Errorf("%s: simulated transient error", demoTaskName)
+		case 1: // permanent failure, dead-lettered immediately
+			return task.Permanent(fmt.Errorf("%s: simulated permanent error", demoTaskName))
+		default:
+			time.Sleep(500 * time.Millisecond)
+			return nil
 		}
-		time.Sleep(500 * time.Millisecond)
-		return nil
 	})
 	if err != nil {
 		log.Fatalf("Registering handler: %v", err)
