@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/w1ldy0uth/datadi/internal/task"
@@ -26,6 +27,7 @@ type Worker struct {
 	dispatcher Dispatcher
 	requirer   Requeuer
 	deadLetter DeadLetterer
+	retryWG    sync.WaitGroup
 }
 
 func New(id int, dispatcher Dispatcher, requirer Requeuer, deadLetter DeadLetterer) *Worker {
@@ -97,7 +99,10 @@ func (w *Worker) handleFailure(ctx context.Context, t *task.Task, cause error) {
 	log.Printf("Worker %d: retrying task %s in %s (attempt %d/%d)",
 		w.id, t.ID, delay, t.RetryCount, t.MaxRetries)
 
+	w.retryWG.Add(1)
 	go func() {
+		defer w.retryWG.Done()
+
 		timer := time.NewTimer(delay)
 		defer timer.Stop()
 
@@ -105,9 +110,16 @@ func (w *Worker) handleFailure(ctx context.Context, t *task.Task, cause error) {
 		case <-timer.C:
 			w.requirer.Enqueue(t)
 		case <-ctx.Done():
-			log.Printf("Worker %d: context canceled, not retrying task %s", w.id, t.ID)
+			log.Printf("Worker %d: context canceled, dead-lettering task %s instead of retrying", w.id, t.ID)
+			t.Status = task.StatusFailed
+			w.deadLetter.Add(t, fmt.Errorf("shutdown during retry backoff: %w", cause))
 		}
 	}()
+}
+
+// Wait blocks until in-flight retry backoff goroutines have dead-lettered or requeued their task.
+func (w *Worker) Wait() {
+	w.retryWG.Wait()
 }
 
 func backoffDuration(attempt int) time.Duration {

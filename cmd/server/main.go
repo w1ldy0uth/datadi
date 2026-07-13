@@ -45,9 +45,11 @@ func main() {
 
 	const numWorkers = 3
 	var wg sync.WaitGroup
+	workers := make([]*worker.Worker, numWorkers)
 
 	for i := range numWorkers {
 		w := worker.New(i, reg, q, dlq)
+		workers[i] = w
 		wg.Add(1)
 		wg.Go(func() {
 			defer wg.Done()
@@ -69,9 +71,12 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("Shutting down, waiting for workers to finish...")
+	wg.Wait()
+	for _, w := range workers {
+		w.Wait()
+	}
 	for _, w := range dlq.List() {
 		log.Printf("Dead letter: task: %s failed permanently: %s", w.Task.ID, w.Reason)
 	}
-	wg.Wait()
 	log.Println("Done")
 }
