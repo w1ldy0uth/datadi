@@ -22,28 +22,28 @@ Priority order:
 3. [x] **Make shutdown-time task loss visible** - a task mid-retry-sleep when `ctx.Done()` fires currently vanishes silently. At minimum this needs to be logged; ideally it's dead-lettered instead of dropped.
 4. [x] **Tests** - backoff math, dispatch-to-unregistered-name, dead-letter transitions. Covers registry dispatch/registration, dead-letter queue add/list/requeue, and worker process/backoff/shutdown behavior via fakes.
 
-## Phase 4 - Registry & task abstraction
+## Phase 3 - Registry & task abstraction
 
 - [ ] Registry fully generic, zero awareness of task semantics
 - [ ] Example/demo handlers live only in `cmd/server/main.go`, never in `internal/`
 - [ ] Typed payload pattern documented (consumer defines and marshals/unmarshals their own payload structs)
 - [ ] Per-task timeout via `context.WithTimeout` at dispatch time
 
-## Phase 5 - Persistence (not started)
+## Phase 4 - Persistence (not started)
 
 - [ ] Tasks and their retry/status state survive a process restart
 - [ ] Likely SQLite or file-backed store to start (avoids standing up external infra for a learning project)
 - [ ] Migration strategy for schema changes
 - [ ] Requeue in-flight/pending tasks on startup
 
-## Phase 6 - Distribution (not started)
+## Phase 5 - Distribution (not started)
 
 - [ ] Multiple worker processes/nodes pulling from a shared queue
 - [ ] Task visibility/leasing so two nodes don't process the same task
 - [ ] Node health / heartbeat
 - [ ] Leader election or equivalent coordination, if needed
 
-## Phase 7 - Public API & external interface (not started)
+## Phase 6 - Public API & external interface (not started)
 
 Deliberately deferred until Phases 3–4 are solid. Once the internals are
 stable:
