@@ -20,7 +20,7 @@ Priority order:
 1. [x] **Finish registry refactor** - `HandlerFunc` signature decoupled to `func(ctx context.Context, payload []byte) error`, so handlers never depend on datadi's internal `Task` type. `Dispatch` takes `(name string, payload []byte)` directly.
 2. [x] **Distinguish error types** - retryable vs. permanent vs. cancelled. Introduce a `PermanentError` type so handlers can signal "don't retry this" (e.g. invalid payload) instead of wasting retry attempts. Context cancellation during shutdown should not count as a failed attempt.
 3. [x] **Make shutdown-time task loss visible** - a task mid-retry-sleep when `ctx.Done()` fires currently vanishes silently. At minimum this needs to be logged; ideally it's dead-lettered instead of dropped.
-4. [ ] **Tests** - backoff math, dispatch-to-unregistered-name, dead-letter transitions. Doesn't need to be exhaustive yet, just enough to catch regressions as the engine keeps changing.
+4. [x] **Tests** - backoff math, dispatch-to-unregistered-name, dead-letter transitions. Covers registry dispatch/registration, dead-letter queue add/list/requeue, and worker process/backoff/shutdown behavior via fakes.
 
 ## Phase 4 - Registry & task abstraction
 
