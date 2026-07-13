@@ -90,6 +90,32 @@ func (f *fakeDeadLetterer) lastReason() error {
 	return f.entries[len(f.entries)-1].reason
 }
 
+type fakePersister struct {
+	mu          sync.Mutex
+	saved       []task.Status
+	deadLetters int
+}
+
+func (f *fakePersister) Save(_ context.Context, t *task.Task) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.saved = append(f.saved, t.Status)
+	return nil
+}
+
+func (f *fakePersister) SaveDeadLetter(_ context.Context, _ *task.Task, _ error) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deadLetters++
+	return nil
+}
+
+func (f *fakePersister) savedStatuses() []task.Status {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]task.Status(nil), f.saved...)
+}
+
 func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -106,7 +132,7 @@ func TestProcess_Success(t *testing.T) {
 	d := &fakeDispatcher{fn: func(context.Context, string, []byte) error { return nil }}
 	rq := &fakeRequeuer{}
 	dl := &fakeDeadLetterer{}
-	w := New(0, d, rq, dl)
+	w := New(0, d, rq, dl, nil)
 
 	tk := &task.Task{ID: "t1", MaxRetries: 3}
 	w.process(context.Background(), tk)
@@ -124,7 +150,7 @@ func TestProcess_PermanentError_DeadLettersImmediately(t *testing.T) {
 	d := &fakeDispatcher{fn: func(context.Context, string, []byte) error { return task.Permanent(cause) }}
 	rq := &fakeRequeuer{}
 	dl := &fakeDeadLetterer{}
-	w := New(0, d, rq, dl)
+	w := New(0, d, rq, dl, nil)
 
 	tk := &task.Task{ID: "t1", MaxRetries: 3}
 	w.process(context.Background(), tk)
@@ -148,7 +174,7 @@ func TestProcess_RetriesExhausted_DeadLetters(t *testing.T) {
 	d := &fakeDispatcher{fn: func(context.Context, string, []byte) error { return cause }}
 	rq := &fakeRequeuer{}
 	dl := &fakeDeadLetterer{}
-	w := New(0, d, rq, dl)
+	w := New(0, d, rq, dl, nil)
 
 	// MaxRetries 0 means the very first failure exhausts retries.
 	tk := &task.Task{ID: "t1", MaxRetries: 0}
@@ -167,7 +193,7 @@ func TestProcess_TransientError_RequeuesAfterBackoff(t *testing.T) {
 	d := &fakeDispatcher{fn: func(context.Context, string, []byte) error { return cause }}
 	rq := &fakeRequeuer{}
 	dl := &fakeDeadLetterer{}
-	w := New(0, d, rq, dl)
+	w := New(0, d, rq, dl, nil)
 
 	tk := &task.Task{ID: "t1", MaxRetries: 3}
 	w.process(context.Background(), tk)
@@ -189,7 +215,7 @@ func TestProcess_ShutdownDuringBackoff_DeadLetters(t *testing.T) {
 	d := &fakeDispatcher{fn: func(context.Context, string, []byte) error { return cause }}
 	rq := &fakeRequeuer{}
 	dl := &fakeDeadLetterer{}
-	w := New(0, d, rq, dl)
+	w := New(0, d, rq, dl, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	tk := &task.Task{ID: "t1", MaxRetries: 3}
@@ -216,7 +242,7 @@ func TestProcess_PerTaskTimeout_TreatedAsRetryableFailure(t *testing.T) {
 	}}
 	rq := &fakeRequeuer{}
 	dl := &fakeDeadLetterer{}
-	w := New(0, d, rq, dl)
+	w := New(0, d, rq, dl, nil)
 
 	tk := &task.Task{ID: "t1", MaxRetries: 3, Timeout: 10 * time.Millisecond}
 	w.process(context.Background(), tk)
@@ -238,11 +264,43 @@ func TestProcess_PerTaskTimeout_TreatedAsRetryableFailure(t *testing.T) {
 	}
 }
 
+func TestProcess_PersistsStateTransitions(t *testing.T) {
+	d := &fakeDispatcher{fn: func(context.Context, string, []byte) error { return nil }}
+	rq := &fakeRequeuer{}
+	dl := &fakeDeadLetterer{}
+	ps := &fakePersister{}
+	w := New(0, d, rq, dl, ps)
+
+	tk := &task.Task{ID: "t1", MaxRetries: 3}
+	w.process(context.Background(), tk)
+
+	got := ps.savedStatuses()
+	want := []task.Status{task.StatusRunning, task.StatusDone}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("persisted statuses = %v, want %v", got, want)
+	}
+}
+
+func TestProcess_PersistsDeadLetterOnPermanentError(t *testing.T) {
+	d := &fakeDispatcher{fn: func(context.Context, string, []byte) error { return task.Permanent(errors.New("bad")) }}
+	rq := &fakeRequeuer{}
+	dl := &fakeDeadLetterer{}
+	ps := &fakePersister{}
+	w := New(0, d, rq, dl, ps)
+
+	tk := &task.Task{ID: "t1", MaxRetries: 3}
+	w.process(context.Background(), tk)
+
+	if ps.deadLetters != 1 {
+		t.Fatalf("persisted dead-letter count = %d, want 1", ps.deadLetters)
+	}
+}
+
 func TestProcess_DispatchCanceled_NotCountedAsFailure(t *testing.T) {
 	d := &fakeDispatcher{fn: func(context.Context, string, []byte) error { return context.Canceled }}
 	rq := &fakeRequeuer{}
 	dl := &fakeDeadLetterer{}
-	w := New(0, d, rq, dl)
+	w := New(0, d, rq, dl, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

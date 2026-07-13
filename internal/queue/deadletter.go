@@ -38,6 +38,15 @@ func (d *DeadLetterQueue) Add(t *task.Task, reason error) {
 	})
 }
 
+// AddEntry restores a previously persisted entry as-is, e.g. when reloading the dead-letter
+// queue from a Store after a restart. Add should be used instead for entries failing for the
+// first time, since it derives Reason and FailedAt for you.
+func (d *DeadLetterQueue) AddEntry(entry DeadLetterEntry) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.entries = append(d.entries, entry)
+}
+
 func (d *DeadLetterQueue) List() []DeadLetterEntry {
 	d.mu.Lock()
 	defer d.mu.Unlock()
