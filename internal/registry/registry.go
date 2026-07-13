@@ -6,6 +6,9 @@ import (
 	"sync"
 )
 
+// HandlerFunc processes a task by name with a raw payload, never datadi's internal Task type.
+// Consumers define their own payload struct, marshal it when enqueuing (task.Task.Payload),
+// and unmarshal it as the first step of their handler — see cmd/server/main.go for an example.
 type HandlerFunc func(ctx context.Context, payload []byte) error
 
 type Registry struct {

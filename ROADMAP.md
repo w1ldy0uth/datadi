@@ -24,10 +24,10 @@ Priority order:
 
 ## Phase 3 - Registry & task abstraction
 
-- [ ] Registry fully generic, zero awareness of task semantics
-- [ ] Example/demo handlers live only in `cmd/server/main.go`, never in `internal/`
-- [ ] Typed payload pattern documented (consumer defines and marshals/unmarshals their own payload structs)
-- [ ] Per-task timeout via `context.WithTimeout` at dispatch time
+- [x] Registry fully generic, zero awareness of task semantics
+- [x] Example/demo handlers live only in `cmd/server/main.go`, never in `internal/`
+- [x] Typed payload pattern documented (consumer defines and marshals/unmarshals their own payload structs) — see `HandlerFunc` doc comment in `internal/registry/registry.go` and `demoPayload` in `cmd/server/main.go`
+- [x] Per-task timeout via `context.WithTimeout` at dispatch time — `task.Task.Timeout`, applied in `Worker.process`; expiry is treated as a normal retryable failure, distinct from shutdown cancellation
 
 ## Phase 4 - Persistence (not started)
 

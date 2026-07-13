@@ -59,7 +59,14 @@ func (w *Worker) process(ctx context.Context, t *task.Task) {
 	log.Printf("Worker %d processing task: %s", w.id, t.ID)
 	t.Status = task.StatusRunning
 
-	if err := w.dispatcher.Dispatch(ctx, t.Name, t.Payload); err != nil {
+	dispatchCtx := ctx
+	if t.Timeout > 0 {
+		var cancel context.CancelFunc
+		dispatchCtx, cancel = context.WithTimeout(ctx, t.Timeout)
+		defer cancel()
+	}
+
+	if err := w.dispatcher.Dispatch(dispatchCtx, t.Name, t.Payload); err != nil {
 		if ctx.Err() != nil {
 			log.Printf("Worker %d: task %s canceled during dispatch, not counting as a failed attempt", w.id, t.ID)
 			t.Status = task.StatusPending

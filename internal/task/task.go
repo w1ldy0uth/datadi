@@ -19,4 +19,6 @@ type Task struct {
 	CreatedAt  time.Time
 	RetryCount int
 	MaxRetries int
+	// Timeout bounds a single dispatch attempt via context.WithTimeout. Zero means no per-task deadline.
+	Timeout time.Duration
 }

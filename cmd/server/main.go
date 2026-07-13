@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -19,6 +20,12 @@ import (
 
 const demoTaskName = "demo-task"
 
+// demoPayload is the consumer-defined payload type for demoTaskName. Handlers only ever see
+// raw bytes, so it's up to the consumer to marshal/unmarshal their own payload struct.
+type demoPayload struct {
+	Message string `json:"message"`
+}
+
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -28,12 +35,24 @@ func main() {
 
 	reg := registry.New()
 	err := reg.Register(demoTaskName, func(ctx context.Context, payload []byte) error {
-		log.Printf("Executing task %s", demoTaskName)
-		switch rand.Intn(3) {
+		var p demoPayload
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return task.Permanent(fmt.Errorf("%s: invalid payload: %w", demoTaskName, err))
+		}
+
+		log.Printf("Executing task %s: %s", demoTaskName, p.Message)
+		switch rand.Intn(4) {
 		case 0: // transient failure, retried with backoff
 			return fmt.Errorf("%s: simulated transient error", demoTaskName)
 		case 1: // permanent failure, dead-lettered immediately
 			return task.Permanent(fmt.Errorf("%s: simulated permanent error", demoTaskName))
+		case 2: // runs past the task's timeout; ctx expires and Dispatch returns ctx.Err()
+			select {
+			case <-time.After(2 * time.Second):
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		default:
 			time.Sleep(500 * time.Millisecond)
 			return nil
@@ -59,12 +78,18 @@ func main() {
 
 	go func() {
 		for i := range 10 {
+			payload, err := json.Marshal(demoPayload{Message: fmt.Sprintf("hello from task-%d", i)})
+			if err != nil {
+				log.Fatalf("Marshaling demo payload: %v", err)
+			}
 			q.Enqueue(&task.Task{
 				ID:         fmt.Sprintf("task-%d", i),
 				Name:       demoTaskName,
+				Payload:    payload,
 				Status:     task.StatusPending,
 				CreatedAt:  time.Now(),
 				MaxRetries: 3,
+				Timeout:    1 * time.Second,
 			})
 		}
 	}()

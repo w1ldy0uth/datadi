@@ -209,6 +209,35 @@ func TestProcess_ShutdownDuringBackoff_DeadLetters(t *testing.T) {
 	}
 }
 
+func TestProcess_PerTaskTimeout_TreatedAsRetryableFailure(t *testing.T) {
+	d := &fakeDispatcher{fn: func(ctx context.Context, _ string, _ []byte) error {
+		<-ctx.Done() // block until the per-task timeout fires
+		return ctx.Err()
+	}}
+	rq := &fakeRequeuer{}
+	dl := &fakeDeadLetterer{}
+	w := New(0, d, rq, dl)
+
+	tk := &task.Task{ID: "t1", MaxRetries: 3, Timeout: 10 * time.Millisecond}
+	w.process(context.Background(), tk)
+
+	// A per-task deadline expiring should be treated like any other dispatch
+	// error (retried with backoff), not like a shutdown cancellation.
+	if tk.Status != task.StatusPending {
+		t.Errorf("task status = %q, want %q", tk.Status, task.StatusPending)
+	}
+	if tk.RetryCount != 1 {
+		t.Errorf("RetryCount = %d, want 1", tk.RetryCount)
+	}
+
+	waitFor(t, 2*time.Second, func() bool { return rq.count() == 1 })
+	w.Wait()
+
+	if dl.count() != 0 {
+		t.Fatal("task retried within budget should not be dead-lettered")
+	}
+}
+
 func TestProcess_DispatchCanceled_NotCountedAsFailure(t *testing.T) {
 	d := &fakeDispatcher{fn: func(context.Context, string, []byte) error { return context.Canceled }}
 	rq := &fakeRequeuer{}
